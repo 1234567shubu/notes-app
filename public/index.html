@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Notes</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <p class="eyebrow">NODE.JS CRUD PRACTICE</p>
+        <h1>My Notes</h1>
+        <p>Write down the useful things before they disappear.</p>
+      </header>
+
+      <section class="note-editor" aria-labelledby="editor-heading">
+        <h2 id="editor-heading">Add a note</h2>
+        <form id="note-form">
+          <input id="title" name="title" placeholder="Note title" maxlength="100" required />
+          <textarea id="content" name="content" placeholder="Write your note here..." required></textarea>
+          <div class="form-footer">
+            <span id="form-message" role="status"></span>
+            <div>
+              <button id="cancel-button" class="secondary hidden" type="button">Cancel</button>
+              <button type="submit">Save note</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section aria-labelledby="notes-heading">
+        <div class="section-heading">
+          <h2 id="notes-heading">Your notes</h2>
+          <span id="note-count"></span>
+        </div>
+        <div id="notes-list" class="notes-list"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
