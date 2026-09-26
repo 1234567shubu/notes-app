@@ -1,93 +1,119 @@
+require('dotenv').config()
 const express = require('express');
 const path = require('path');
-const fs = require('fs')
-const { randomUUID } = require('crypto')
+const mongoose = require('mongoose');
+const Note = require('./models/notes')
 
 
-const dataFolder = path.join(__dirname, 'data')
-const datafile = path.join(dataFolder, 'notes.json')
 const app = express()
+const startServer = async () => {
+    try {
+        await mongoose.connect(process.env.MONGODB_URI);
 
-// befor the app runs check whether folder and file exist. If not create it.
-if (!fs.existsSync(dataFolder)) {
-    fs.mkdirSync(dataFolder)
-}
+        console.log("MongoDB connected");
+        console.log("Connected database name:", mongoose.connection.name);
 
-if (!fs.existsSync(datafile)) {
-    fs.writeFileSync(datafile, '[]')
-}
+        app.listen(3000, () => {
+            console.log("Server is running on http://localhost:3000");
+        });
+    } catch (err) {
+        console.error("Error connecting to MongoDB:", err);
+        process.exit(1);
+    }
+};
 
-function readNotes() {
-    return JSON.parse(fs.readFileSync(datafile, 'utf-8'))
-}
+startServer();
 
-function saveNotes(content) {
-    fs.writeFileSync(datafile, JSON.stringify(content, null, 2))
-}
 
 app.use(express.json())
 app.use(express.static(path.join(__dirname, 'public')))
 
-app.get('/api/notes', (req, res) => {
-    res.status(200).json(readNotes())
+
+
+app.get('/api/notes', async (req, res) => {
+    try {
+
+        const notes = await Note.find()
+        res.status(200).json(notes)
+    }
+    catch (err) {
+        console.error('Error fetching notes:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
 })
 
-app.post('/api/notes', (req, res) => {
-    const { title, content } = req.body
-    if (!title?.trim() || !content?.trim()) {
-        {
-            return res.status(400).json({ message: 'A title and content are required.' })
+app.post('/api/notes', async (req, res) => {
+    try {
+        const { title, content } = req.body
+        if (!title?.trim() || !content?.trim()) {
+            {
+                return res.status(400).json({ message: 'A title and content are required.' })
+            }
         }
-    }
 
-    const notes = readNotes()
-    const newNote = {
-        id: randomUUID(),
-        title: title.trim(),
-        content: content.trim(),
-        updatedAt: new Date().toISOString()
-    }
-    notes.unshift(newNote)
-    saveNotes(notes)
-    res.status(201).json(newNote)
-})
-
-app.put('/api/notes/:id', (req, res) => {
-
-    const { id } = req.params
-    const { title, content } = req.body
-
-    if (!title?.trim() || !content?.trim()) {
-        {
-            return res.status(400).json({ message: 'A title and content are required.' })
+        const newNote = {
+            title: title.trim(),
+            content: content.trim(),
+            updatedAt: new Date().toISOString()
         }
+
+        const note = new Note(newNote)
+        const savedNote = await note.save()
+        res.status(201).json(savedNote)
+    }
+    catch (err) {
+        console.error('Error creating note:', err);
+        res.status(500).json({ message: 'Internal server error' });
     }
 
-    const notes = readNotes()
-    const note = notes.find(note => note.id === id)
-
-    if (!note) return response.status(404).json({ message: "Note not found." });
-
-    note.title = title.trim()
-    note.content = content.trim()
-    note.updatedAt = new Date().toISOString()
-    saveNotes(notes)
-    res.status(201).json(note)
 })
 
-app.delete('/api/notes/:id', (req, res) => {
-  const notes = readNotes();
-  const index = notes.findIndex(note => note.id === req.params.id);
+app.put('/api/notes/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+        const { title, content } = req.body
 
-  if (index === -1) {
-    return res.status(404).json({ message: 'Note not found.' });
-  }
+        if (!title?.trim() || !content?.trim()) {
+            {
+                return res.status(400).json({ message: 'A title and content are required.' })
+            }
+        }
 
-  notes.splice(index, 1);
-  saveNotes(notes);
-  return res.status(204).send();
+        const updatedNote = await Note.findByIdAndUpdate(id, {
+            title: title.trim(),
+            content: content.trim(),
+            updatedAt: new Date().toISOString()
+        }, {
+            new: true
+        })
+        if (!updatedNote) return res.status(404).json({ message: "Note not found." });
+
+        res.status(200).json(updatedNote)
+    }
+    catch (err) {
+        console.error("Error updating note:", err);
+
+        if (err.name === "CastError") {
+            return res.status(400).json({ message: "Invalid note ID." });
+        }
+
+        return res.status(500).json({ message: "Internal server error" });
+    }
+
+})
+
+app.delete('/api/notes/:id', async (req, res) => {
+    try {
+        const deletedNote = await Note.findByIdAndDelete(req.params.id);
+
+        if (!deletedNote) {
+            return res.status(404).json({ message: 'Note not found.' });
+        }
+
+        return res.status(204).send();
+    } catch (err) {
+        console.error('Error deleting note:', err);
+        return res.status(400).json({ message: 'Invalid note ID.' });
+    }
 });
 
-app.listen(3000, () => {
-    console.log('Server is running on http://localhost:3000');
-})

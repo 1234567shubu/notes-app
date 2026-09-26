@@ -7,7 +7,6 @@ const message = document.querySelector("#form-message");
 const cancelButton = document.querySelector("#cancel-button");
 console.log('app started')
 let editingNoteId = null;
-
 async function fetchNotes() {
   const response = await fetch("/api/notes");
   const notes = await response.json();
@@ -41,7 +40,7 @@ function renderNotes(notes) {
     card.querySelector("p").textContent = note.content;
     card.querySelector("time").textContent = `Updated ${new Date(note.updatedAt).toLocaleString()}`;
     card.querySelector(".edit").addEventListener("click", () => startEditing(note));
-    card.querySelector(".delete").addEventListener("click", () => deleteNote(note.id));
+    card.querySelector(".delete").addEventListener("click", () => deleteNote(note._id));
     notesList.appendChild(card);
   });
 }
@@ -65,7 +64,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 function startEditing(note) {
-  editingNoteId = note.id;
+  editingNoteId = note._id;
   titleInput.value = note.title;
   contentInput.value = note.content;
   document.querySelector("#editor-heading").textContent = "Edit note";
@@ -77,7 +76,17 @@ function startEditing(note) {
 
 async function deleteNote(id) {
   if (!confirm("Delete this note?")) return;
-  await fetch(`/api/notes/${id}`, { method: "DELETE" });
+
+  const response = await fetch(`/api/notes/${id}`, {
+    method: "DELETE"
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    message.textContent = result.message;
+    return;
+  }
+
   if (editingNoteId === id) resetForm();
   fetchNotes();
 }
