@@ -30,19 +30,18 @@ app.use(express.static(path.join(__dirname, 'public')))
 
 
 
-app.get('/api/notes', async (req, res) => {
+app.get('/api/notes', async (req, res, next) => {
     try {
 
-        const notes = await Note.find()
+        const notes = await Note.find().sort('-updatedAt')
         res.status(200).json(notes)
     }
     catch (err) {
-        console.error('Error fetching notes:', err);
-        res.status(500).json({ message: 'Internal server error' });
+        next(err);
     }
 })
 
-app.post('/api/notes', async (req, res) => {
+app.post('/api/notes', async (req, res, next) => {
     try {
         const { title, content } = req.body
         if (!title?.trim() || !content?.trim()) {
@@ -54,7 +53,6 @@ app.post('/api/notes', async (req, res) => {
         const newNote = {
             title: title.trim(),
             content: content.trim(),
-            updatedAt: new Date().toISOString()
         }
 
         const note = new Note(newNote)
@@ -62,13 +60,12 @@ app.post('/api/notes', async (req, res) => {
         res.status(201).json(savedNote)
     }
     catch (err) {
-        console.error('Error creating note:', err);
-        res.status(500).json({ message: 'Internal server error' });
+        next(err);
     }
 
 })
 
-app.put('/api/notes/:id', async (req, res) => {
+app.put('/api/notes/:id', async (req, res, next) => {
     try {
         const { id } = req.params
         const { title, content } = req.body
@@ -82,7 +79,6 @@ app.put('/api/notes/:id', async (req, res) => {
         const updatedNote = await Note.findByIdAndUpdate(id, {
             title: title.trim(),
             content: content.trim(),
-            updatedAt: new Date().toISOString()
         }, {
             new: true
         })
@@ -91,18 +87,12 @@ app.put('/api/notes/:id', async (req, res) => {
         res.status(200).json(updatedNote)
     }
     catch (err) {
-        console.error("Error updating note:", err);
-
-        if (err.name === "CastError") {
-            return res.status(400).json({ message: "Invalid note ID." });
-        }
-
-        return res.status(500).json({ message: "Internal server error" });
+        next(err);
     }
 
 })
 
-app.delete('/api/notes/:id', async (req, res) => {
+app.delete('/api/notes/:id', async (req, res, next) => {
     try {
         const deletedNote = await Note.findByIdAndDelete(req.params.id);
 
@@ -112,8 +102,21 @@ app.delete('/api/notes/:id', async (req, res) => {
 
         return res.status(204).send();
     } catch (err) {
-        console.error('Error deleting note:', err);
-        return res.status(400).json({ message: 'Invalid note ID.' });
+        next(err);
     }
+});
+
+app.use((err, req, res, next) => {
+  console.error(err);
+
+  if (err.name === "CastError") {
+    return res.status(400).json({ message: "Invalid note ID." });
+  }
+
+  if (err.name === "ValidationError") {
+    return res.status(400).json({ message: err.message });
+  }
+
+  return res.status(500).json({ message: "Internal server error." });
 });
 

@@ -7,10 +7,17 @@ const message = document.querySelector("#form-message");
 const cancelButton = document.querySelector("#cancel-button");
 console.log('app started')
 let editingNoteId = null;
+
 async function fetchNotes() {
-  const response = await fetch("/api/notes");
-  const notes = await response.json();
-  renderNotes(notes);
+  try {
+    const response = await fetch("/api/notes");
+    const notes = await response.json();
+    renderNotes(notes);
+  }
+  catch(err){
+    console.error("Error fetching notes:", err);
+  }
+
 }
 
 function renderNotes(notes) {
