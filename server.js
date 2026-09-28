@@ -6,10 +6,25 @@ const Note = require('./models/notes');
 const User = require('./models/users.js')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 
 const app = express()
+const COOKIE_NAME = 'token';
+const TOKEN_TTL_MS = 5 * 60 * 1000;
+const isProduction = process.env.NODE_ENV === 'production';
+const authCookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'strict',
+    path: '/',
+};
+
 const startServer = async () => {
     try {
+        if (!process.env.JWT_SECRET || Buffer.byteLength(process.env.JWT_SECRET) < 32) {
+            throw new Error('JWT_SECRET must be set to a random secret of at least 32 bytes.');
+        }
+
         await mongoose.connect(process.env.MONGODB_URI);
 
         console.log("MongoDB connected");
@@ -19,7 +34,7 @@ const startServer = async () => {
             console.log("Server is running on http://localhost:3000");
         });
     } catch (err) {
-        console.error("Error connecting to MongoDB:", err);
+        console.error("Server startup failed:", err);
         process.exit(1);
     }
 };
@@ -28,20 +43,24 @@ startServer();
 
 
 app.use(express.json())
+app.use(cookieParser())
 app.use(express.static(path.join(__dirname, 'public')))
 
 const authenticateUser = (req, res, next) => {
-    if (!req.headers.authorization || !req.headers.authorization.startsWith('Bearer ')) {
+    const token = req.cookies?.[COOKIE_NAME];
+    if (!token) {
         return res.status(401).json({ message: 'Unauthorized' });
     }
     let isTokenValid;
     try {
-        isTokenValid = jwt.verify(req.headers.authorization.split(' ')[1], process.env.JWT_SECRET)
-        if (!isTokenValid) {
-            return res.status(401).json({ message: 'Unauthorized' });
-        }
+        isTokenValid = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     }
-    catch (err) {
+    catch {
+        res.clearCookie(COOKIE_NAME, authCookieOptions);
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+    if (!isTokenValid.userId) {
+        res.clearCookie(COOKIE_NAME, authCookieOptions);
         return res.status(401).json({ message: 'Unauthorized' });
     }
     req.userId = isTokenValid.userId;
@@ -79,11 +98,31 @@ app.post('/api/auth/login', async (req, res, next) => {
             return res.status(401).json({ message: 'Email or password is incorrect.' });
         }
 
-        const accessToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '5min' });
-        return res.status(200).json({ message: 'Login successful.', accessToken, user: { name: user.name, email: user.email } });
+        const accessToken = jwt.sign({ userId: user._id.toString() }, process.env.JWT_SECRET, { expiresIn: '5m', algorithm: 'HS256' });
+        res.cookie(COOKIE_NAME, accessToken, { ...authCookieOptions, maxAge: TOKEN_TTL_MS });
+
+        return res.status(200).json({ message: 'Login successful.', user: { name: user.name, email: user.email } });
     } catch (err) {
         next(err);
     }
+});
+
+app.get('/api/auth/me', authenticateUser, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.userId).select('name email');
+        if (!user) {
+            res.clearCookie(COOKIE_NAME, authCookieOptions);
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        return res.status(200).json({ user });
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie(COOKIE_NAME, authCookieOptions);
+    return res.status(200).json({ message: 'Logged out.' });
 });
 
 app.get('/api/notes', authenticateUser, async (req, res, next) => {

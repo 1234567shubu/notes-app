@@ -17,24 +17,35 @@ const userNameDisplay = document.querySelector("#user-name");
 
 console.log('app started')
 let editingNoteId = null;
+// Remove a bearer token left behind by the earlier localStorage-based version.
+localStorage.removeItem("token");
 
-function handleExpiredToken() {
-  localStorage.removeItem("token");
+function showLogin(messageText = "") {
   notesContainer.style.display = "none";
   authContainer.style.display = "block";
   registerPanel.classList.add("hidden");
   loginPanel.classList.remove("hidden");
-  authMessage.textContent = "Your session expired. Please log in again.";
+  authMessage.textContent = messageText;
   notesList.innerHTML = "";
   noteCount.textContent = "";
+  userNameDisplay.textContent = "";
   resetForm();
+}
+
+function showNotes(user) {
+  authContainer.style.display = "none";
+  notesContainer.style.display = "block";
+  userNameDisplay.textContent = user?.name ? `Welcome, ${user.name}` : "";
+}
+
+function handleExpiredToken() {
+  showLogin("Your session expired. Please log in again.");
 }
 
 async function authorizedFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
-  headers.set("Authorization", `Bearer ${localStorage.getItem("token") || ""}`);
 
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, { ...options, headers, credentials: "same-origin" });
   if (response.status === 401) {
     handleExpiredToken();
     return null;
@@ -50,14 +61,21 @@ async function readJson(response) {
   }
 }
 
-if (localStorage.getItem("token")) {
-  authContainer.style.display = "none";
-  notesContainer.style.display = "block";
-  fetchNotes();
-} else {
-  notesContainer.style.display = "none";
-  authContainer.style.display = "block";
+async function checkLogin() {
+  try {
+    const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+    if (!response.ok) {
+      showLogin();
+      return;
+    }
+    const result = await readJson(response);
+    showNotes(result.user);
+    fetchNotes();
+  } catch (err) {
+    showLogin("Could not reach the server. Please try again.");
+  }
 }
+checkLogin();
 
 document.querySelector("#show-register").addEventListener("click", (event) => {
   event.preventDefault();
@@ -82,12 +100,9 @@ async function handleLogin(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(Object.fromEntries(new FormData(loginForm)))
     });
-    const result = await response.json();
+    const result = await readJson(response);
     if (!response.ok) return (authMessage.textContent = result.message);
-    localStorage.setItem("token", result.accessToken);
-    userNameDisplay.textContent = `Welcome, ${result.user.name}`;
-    authContainer.style.display = "none";
-    notesContainer.style.display = "block";
+    showNotes(result.user);
     fetchNotes();
   } catch (err) {
     authMessage.textContent = "Could not reach the server. Please try again.";
@@ -236,12 +251,12 @@ function resetForm() {
 
 cancelButton.addEventListener("click", resetForm);
 logoutButton.addEventListener("click", () => {
-  localStorage.removeItem("token");
-  notesContainer.style.display = "none";
-  authContainer.style.display = "block";
-  registerPanel.classList.add("hidden");
-  loginPanel.classList.remove("hidden");
-  notesList.innerHTML = "";
-  noteCount.textContent = "";
-  resetForm();
+  fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" })
+    .then((response) => {
+      if (!response.ok) throw new Error("Logout failed");
+      showLogin("You have been logged out.");
+    })
+    .catch(() => {
+      authMessage.textContent = "Could not log out. Please try again.";
+    });
 });
