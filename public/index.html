@@ -1,15 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Notes</title>
-    <link rel="stylesheet" href="/style.css" />
-  </head>
-  <body>
-    <main class="container">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Notes</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+  <main class="container">
+    <div class="login-container" id="auth-container">
+      <section id="login-panel">
+        <h2>Account Login</h2>
+        <form id="login-form">
+        <div class="input-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" name="email" placeholder="Enter your email" autocomplete="email" required>
+        </div>
+        <div class="input-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn-submit" id="login-submit">Login</button>
+        <div class="signup-link">
+          Don't have an account? <a href="#register" id="show-register">Sign up here</a>
+        </div>
+        </form>
+      </section>
+      <section id="register-panel" class="hidden">
+        <h2>Create an account</h2>
+        <form id="register-form">
+          <div class="input-group">
+            <label for="register-name">Name</label>
+            <input type="text" id="register-name" name="name" placeholder="Your name" autocomplete="name" maxlength="80" required>
+          </div>
+          <div class="input-group">
+            <label for="register-email">Email</label>
+            <input type="email" id="register-email" name="email" placeholder="Enter your email" autocomplete="email" required>
+          </div>
+          <div class="input-group">
+            <label for="register-password">Password</label>
+            <input type="password" id="register-password" name="password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required>
+          </div>
+          <button type="submit" class="btn-submit">Create account</button>
+          <div class="signup-link">Already have an account? <a href="#login" id="show-login">Log in</a></div>
+        </form>
+      </section>
+      <p id="auth-message" role="status" aria-live="polite"></p>
+    </div>
+    <div id="notes-container" class="notes-container">
       <header>
         <p class="eyebrow">NODE.JS CRUD PRACTICE</p>
+        <div>
+          <span id="user-name"></span>
+          <button id="logout-button" class="secondary">Logout</button>  
+        </div>
         <h1>My Notes</h1>
         <p>Write down the useful things before they disappear.</p>
       </header>
@@ -36,7 +82,10 @@
         </div>
         <div id="notes-list" class="notes-list"></div>
       </section>
-    </main>
-    <script src="/app.js"></script>
-  </body>
+    </div>
+
+  </main>
+  <script src="/app.js"></script>
+</body>
+
 </html>
