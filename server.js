@@ -109,7 +109,7 @@ app.post('/api/auth/login', async (req, res, next) => {
 
         const createRefreshToken = await TokenStorage({ token: hashedRefreshToken, userId: user._id, expiration: expirationDate });
         const savedRefreshToken = await createRefreshToken.save();
-        if(!savedRefreshToken){
+        if (!savedRefreshToken) {
             return res.status(500).json({ message: 'Failed to save refresh token.' });
         }
         res.cookie(TOKEN_NAME, accessToken, { ...authCookieOptions, maxAge: TOKEN_TTL_MS });
@@ -163,7 +163,13 @@ app.post('/api/auth/refresh', async (req, res, next) => {
 
         storedToken.token = hashToken(newRefreshToken);
         storedToken.expiration = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
-        await storedToken.save();
+        try {
+            await storedToken.save();
+        } catch (err) {
+            res.clearCookie(TOKEN_NAME, authCookieOptions);
+            res.clearCookie(REFRESH_TOKEN_NAME, authCookieOptions);
+            return next(err);
+        }
 
         res.cookie(TOKEN_NAME, newAccessToken, {
             ...authCookieOptions,
@@ -180,12 +186,24 @@ app.post('/api/auth/refresh', async (req, res, next) => {
         next(err);
     }
 });
-app.post('/api/auth/logout', (req, res) => {
-    res.clearCookie(TOKEN_NAME, authCookieOptions);
-    res.clearCookie(REFRESH_TOKEN_NAME, authCookieOptions);
-    return res.status(200).json({ message: 'Logged out.' });
-});
+app.post('/api/auth/logout', async (req, res, next) => {
+    try {
+        const refreshToken = req.cookies?.[REFRESH_TOKEN_NAME];
 
+        res.clearCookie(TOKEN_NAME, authCookieOptions);
+        res.clearCookie(REFRESH_TOKEN_NAME, authCookieOptions);
+
+        if (refreshToken) {
+            await TokenStorage.findOneAndDelete({
+                token: hashToken(refreshToken),
+            });
+        }
+
+        return res.status(200).json({ message: 'Logged out.' });
+    } catch (err) {
+        next(err);
+    }
+});
 app.get('/api/notes', authenticateUser, async (req, res, next) => {
     try {
         const userId = req.userId

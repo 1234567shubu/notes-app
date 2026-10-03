@@ -99,7 +99,8 @@ async function readJson(response) {
 
 async function checkLogin() {
   try {
-    const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+    const response = await authorizedFetch("/api/auth/me", { credentials: "same-origin" });
+    if (!response) return; // If authorizedFetch returned null, the user is not logged in
     if (!response.ok) {
       showLogin();
       return;
