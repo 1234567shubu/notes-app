@@ -38,18 +38,54 @@ function showNotes(user) {
   userNameDisplay.textContent = user?.name ? `Welcome, ${user.name}` : "";
 }
 
-function handleExpiredToken() {
-  showLogin("Your session expired. Please log in again.");
+async function isRefreshTokenExpired() {
+  
+  try {
+    // 1. Make a clean POST request to the refresh endpoint
+    const response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: "same-origin" // or "include" depending on your CORS setup
+    });
+
+    // 2. If the refresh token is also expired or invalid in the backend
+    if (!response.ok) {
+      return true; // Refresh failed
+    }
+
+    return false; // Refresh succeeded, new access token cookie is now set!
+  } catch (error) {
+    console.error('Error refreshing token:', error);
+    return true;
+  }
 }
 
 async function authorizedFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
 
+  // 1. Try the original request
   const response = await fetch(url, { ...options, headers, credentials: "same-origin" });
+  
+  // 2. If Access Token expired (401 Unauthorized)
   if (response.status === 401) {
-    handleExpiredToken();
-    return null;
+    const refreshTokenExpired = await isRefreshTokenExpired();
+    
+    // 3. If refresh token is dead, force login
+    if (refreshTokenExpired) {
+      showLogin("Your session expired. Please log in again.");
+      return null;
+    }
+    
+    // 4. Refresh succeeded! Retry the original request with the new access token
+    const res = await fetch(url, { ...options, headers, credentials: "same-origin" });
+    
+    if (!res.ok) {
+      showLogin("Your session expired. Please log in again.");
+      return null;
+    }
+    
+    return res;
   }
+  
   return response;
 }
 

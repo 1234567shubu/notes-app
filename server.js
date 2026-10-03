@@ -7,10 +7,14 @@ const User = require('./models/users.js')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const { generateAccessToken, generateRandomRefreshToken, hashToken } = require('./utils/token.js');
+const TokenStorage = require('./models/tokenStorage.js');
 
 const app = express()
-const COOKIE_NAME = 'token';
-const TOKEN_TTL_MS = 5 * 60 * 1000;
+const TOKEN_NAME = 'token';
+const REFRESH_TOKEN_NAME = 'refreshToken';
+const TOKEN_TTL_MS = 30 * 1000;
+const REFRESH_TOKEN_TTL_MS = 2 * 60 * 1000; // 2 minutes
 const isProduction = process.env.NODE_ENV === 'production';
 const authCookieOptions = {
     httpOnly: true,
@@ -47,7 +51,7 @@ app.use(cookieParser())
 app.use(express.static(path.join(__dirname, 'public')))
 
 const authenticateUser = (req, res, next) => {
-    const token = req.cookies?.[COOKIE_NAME];
+    const token = req.cookies?.[TOKEN_NAME];
     if (!token) {
         return res.status(401).json({ message: 'Unauthorized' });
     }
@@ -56,11 +60,11 @@ const authenticateUser = (req, res, next) => {
         isTokenValid = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     }
     catch {
-        res.clearCookie(COOKIE_NAME, authCookieOptions);
+        res.clearCookie(TOKEN_NAME, authCookieOptions);
         return res.status(401).json({ message: 'Unauthorized' });
     }
     if (!isTokenValid.userId) {
-        res.clearCookie(COOKIE_NAME, authCookieOptions);
+        res.clearCookie(TOKEN_NAME, authCookieOptions);
         return res.status(401).json({ message: 'Unauthorized' });
     }
     req.userId = isTokenValid.userId;
@@ -98,9 +102,18 @@ app.post('/api/auth/login', async (req, res, next) => {
             return res.status(401).json({ message: 'Email or password is incorrect.' });
         }
 
-        const accessToken = jwt.sign({ userId: user._id.toString() }, process.env.JWT_SECRET, { expiresIn: '5m', algorithm: 'HS256' });
-        res.cookie(COOKIE_NAME, accessToken, { ...authCookieOptions, maxAge: TOKEN_TTL_MS });
+        const accessToken = generateAccessToken(user)
+        const refreshToken = generateRandomRefreshToken();
+        const hashedRefreshToken = hashToken(refreshToken);
+        const expirationDate = new Date(Date.now() + REFRESH_TOKEN_TTL_MS); // 5 minutes from now
 
+        const createRefreshToken = await TokenStorage({ token: hashedRefreshToken, userId: user._id, expiration: expirationDate });
+        const savedRefreshToken = await createRefreshToken.save();
+        if(!savedRefreshToken){
+            return res.status(500).json({ message: 'Failed to save refresh token.' });
+        }
+        res.cookie(TOKEN_NAME, accessToken, { ...authCookieOptions, maxAge: TOKEN_TTL_MS });
+        res.cookie(REFRESH_TOKEN_NAME, refreshToken, { ...authCookieOptions, maxAge: REFRESH_TOKEN_TTL_MS });
         return res.status(200).json({ message: 'Login successful.', user: { name: user.name, email: user.email } });
     } catch (err) {
         next(err);
@@ -111,7 +124,7 @@ app.get('/api/auth/me', authenticateUser, async (req, res, next) => {
     try {
         const user = await User.findById(req.userId).select('name email');
         if (!user) {
-            res.clearCookie(COOKIE_NAME, authCookieOptions);
+            res.clearCookie(TOKEN_NAME, authCookieOptions);
             return res.status(401).json({ message: 'Unauthorized' });
         }
         return res.status(200).json({ user });
@@ -120,8 +133,56 @@ app.get('/api/auth/me', authenticateUser, async (req, res, next) => {
     }
 });
 
+app.post('/api/auth/refresh', async (req, res, next) => {
+    try {
+        const refreshToken = req.cookies?.[REFRESH_TOKEN_NAME];
+
+        if (!refreshToken) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const storedToken = await TokenStorage.findOne({
+            token: hashToken(refreshToken),
+        });
+
+        if (!storedToken || storedToken.expiration < new Date()) {
+            res.clearCookie(REFRESH_TOKEN_NAME, authCookieOptions);
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const user = await User.findById(storedToken.userId);
+
+        if (!user) {
+            await TokenStorage.deleteOne({ _id: storedToken._id });
+            res.clearCookie(REFRESH_TOKEN_NAME, authCookieOptions);
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const newAccessToken = generateAccessToken(user);
+        const newRefreshToken = generateRandomRefreshToken();
+
+        storedToken.token = hashToken(newRefreshToken);
+        storedToken.expiration = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+        await storedToken.save();
+
+        res.cookie(TOKEN_NAME, newAccessToken, {
+            ...authCookieOptions,
+            maxAge: TOKEN_TTL_MS,
+        });
+
+        res.cookie(REFRESH_TOKEN_NAME, newRefreshToken, {
+            ...authCookieOptions,
+            maxAge: REFRESH_TOKEN_TTL_MS,
+        });
+
+        return res.status(200).json({ message: 'Access token refreshed.' });
+    } catch (err) {
+        next(err);
+    }
+});
 app.post('/api/auth/logout', (req, res) => {
-    res.clearCookie(COOKIE_NAME, authCookieOptions);
+    res.clearCookie(TOKEN_NAME, authCookieOptions);
+    res.clearCookie(REFRESH_TOKEN_NAME, authCookieOptions);
     return res.status(200).json({ message: 'Logged out.' });
 });
 
